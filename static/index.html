@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go Chat Server - Broadcast Mode</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            margin-bottom: 5px;
+        }
+
+        .status {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: 70vh;
+        }
+
+        #chat {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #f8f9fa;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px;
+            border-radius: 10px;
+            background: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .username {
+            font-weight: bold;
+            color: #3498db;
+        }
+
+        .time {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-left: auto;
+        }
+
+        .message-text {
+            color: #2c3e50;
+            line-height: 1.4;
+        }
+
+        .input-container {
+            padding: 20px;
+            background: #ecf0f1;
+            border-top: 1px solid #bdc3c7;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #bdc3c7;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        button {
+            padding: 12px 24px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #2980b9;
+        }
+
+        .user-count {
+            text-align: center;
+            padding: 10px;
+            background: #34495e;
+            color: white;
+            font-size: 14px;
+        }
+
+        .connection-status {
+            padding: 10px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .connected {
+            color: #27ae60;
+        }
+
+        .disconnected {
+            color: #e74c3c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💬 Go Chat Server</h1>
+            <div class="status">Broadcast Mode - Everyone sees all messages!</div>
+        </div>
+
+        <div class="user-count">
+            👥 Online: <span id="userCount">0</span> users
+        </div>
+
+        <div class="connection-status">
+            Status: <span id="status" class="disconnected">Disconnected</span>
+        </div>
+
+        <div class="chat-container">
+            <div id="chat"></div>
+        </div>
+
+        <div class="input-container">
+            <div class="input-group">
+                <input type="text" id="usernameInput" placeholder="Enter your username" value="User">
+            </div>
+            <div class="input-group">
+                <input type="text" id="messageInput" placeholder="Type your message...">
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let username = "User";
+        let userCount = 0;
+
+        function connect() {
+            const usernameInput = document.getElementById('usernameInput').value;
+            if (usernameInput) {
+                username = usernameInput;
+            }
+
+            try {
+                ws = new WebSocket(`ws://localhost:8080/ws?username=${encodeURIComponent(username)}`);
+                updateStatus('Connecting...', 'disconnected');
+
+                ws.onopen = function() {
+                    updateStatus('Connected', 'connected');
+                    addSystemMessage('Connected to chat server');
+                };
+
+                ws.onmessage = function(event) {
+                    const msg = JSON.parse(event.data);
+                    addMessage(msg);
+                };
+
+                ws.onclose = function() {
+                    updateStatus('Disconnected', 'disconnected');
+                    addSystemMessage('Disconnected from server');
+                    // Try to reconnect after 2 seconds
+                    setTimeout(connect, 2000);
+                };
+
+                ws.onerror = function(error) {
+                    console.error('WebSocket error:', error);
+                    updateStatus('Connection error', 'disconnected');
+                };
+
+            } catch (error) {
+                console.error('Failed to connect:', error);
+                updateStatus('Failed to connect', 'disconnected');
+            }
+        }
+
+        function updateStatus(text, className) {
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = text;
+            statusElement.className = className;
+        }
+
+        function addMessage(msg) {
+            const chat = document.getElementById('chat');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="username">${msg.username}</span>
+                    <span class="time">${msg.time}</span>
+                </div>
+                <div class="message-text">${msg.text}</div>
+            `;
+            
+            chat.appendChild(messageDiv);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function addSystemMessage(text) {
+            const chat = document.getElementById('chat');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            messageDiv.style.background = '#fff3cd';
+            messageDiv.style.border = '1px solid #ffeaa7';
+            
+            messageDiv.innerHTML = `
+                <div class="message-text" style="text-align: center; color: #856404;">
+                    <em>${text}</em>
+                </div>
+            `;
+            
+            chat.appendChild(messageDiv);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (message && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    username: username,
+                    text: message
+                }));
+                input.value = '';
+            } else if (!ws || ws.readyState !== WebSocket.OPEN) {
+                addSystemMessage('Not connected to server');
+            }
+        }
+
+        // Event listeners
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        document.getElementById('usernameInput').addEventListener('change', function() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                addSystemMessage('Username changed - reconnecting...');
+                ws.close();
+                connect();
+            }
+        });
+
+        // Initial connection
+        connect();
+    </script>
+</body>
+</html>
